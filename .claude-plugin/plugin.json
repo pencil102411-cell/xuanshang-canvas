@@ -1,8 +1,8 @@
 {
   "name": "xuanshang-canvas",
   "displayName": "玄上画布插件",
-  "version": "0.1.0",
-  "description": "让 Claude Code 用统一规则操作本机的玄上无限画布：查项目、上传认证素材和参考视频、建 Seedance 视频节点、提交生成（花积分前必须确认）。",
+  "version": "0.2.0",
+  "description": "让 Claude Code 用统一规则操作本机的玄上无限画布：新建项目和认证分组、查项目、上传认证素材和参考视频、建 Seedance 视频节点、提交生成（花积分前必须确认）。",
   "author": {
     "name": "pencil102411-cell",
     "url": "https://github.com/pencil102411-cell"

@@ -1,6 +1,6 @@
 # 玄上画布插件（xuanshang-canvas）
 
-让 Claude Code、Codex 等 AI 工具，用**同一套规则**操作你电脑上正在运行的「玄上无限画布」（也支持玄上内部版）：查项目、上传认证图片和参考视频、把素材放到画布上、建 Seedance 视频节点、提交生成、样片转成片、查进度。
+让 Claude Code、Codex 等 AI 工具，用**同一套规则**操作你电脑上正在运行的「玄上无限画布」（也支持玄上内部版）：新建项目和认证分组、查项目、上传认证图片和参考视频、把素材放到画布上、建 Seedance 视频节点、提交生成、样片转成片、查进度。
 
 - **不用每次启动**：在 AI 工具里装一次，以后打开 AI 工具就会在后台自动启动插件，插件再自己去找开着的画布。
 - **不碰你的密钥**：插件不读取、不保存任何 API Key。所有请求都经过你本机的画布，用的是画布里登录的账号和积分。
@@ -8,98 +8,89 @@
 
 ---
 
-## 一、安装前准备（每台电脑一次）
+## 一、安装：让 AI 帮你装
 
-1. **Windows 电脑**，装好并能正常打开「玄上无限画布」，在画布里登录自己的账号。
-2. **安装 uv**（一个帮你自动准备 Python 环境的小工具，装了它就不用自己装 Python）。在普通的 PowerShell 窗口里运行：
+**准备**：Windows 电脑，装好并能正常打开「玄上无限画布」，在画布里登录自己的账号；装好 Claude Code 或 Codex。
 
-   ```powershell
-   winget install --id=astral-sh.uv -e
-   ```
+把下面这段话**原样发给 Claude Code 或 Codex**，它会自己把插件装好：
 
-   装完**关掉 PowerShell 再重新打开**，运行 `uv --version`，能看到版本号就说明装好了。
-3. **从 git 仓库安装时**，电脑上还要装 Git（装 Claude Code 时一般已经装过）。如果仓库是私有的，要先用有权限的账号登录。
+> 请帮我安装玄上画布插件：按 https://github.com/pencil102411-cell/xuanshang-canvas 这个仓库 README 里「给 AI 的安装步骤」操作，装完运行自检，把结果告诉我。
 
-> 插件仓库地址：<https://github.com/pencil102411-cell/xuanshang-canvas>
->
-> 下文用 `C:\工具\xuanshang-canvas` 代表「插件文件夹在你电脑上的位置」，换成你实际放的位置。
+安装过程中 AI 可能会请你批准运行命令，点允许就行。装好以后：
+
+- **Claude Code**：新开一个会话；
+- **Codex**：重启 Codex。
+
+然后说一句「**用 canvas_status 看看画布连上了没有**」，看到「已连接」和画布名字，就装好了。
 
 ---
 
-## 二、按你用的 AI 工具安装
+## 二、给 AI 的安装步骤
 
-### Claude Code
+> 这一节是写给 AI 看的，使用者不用自己操作。所有命令都在普通权限的 PowerShell 里运行。插件仓库：https://github.com/pencil102411-cell/xuanshang-canvas
 
-在普通的 PowerShell 窗口里依次运行（不用管理员权限）：
+### 第 1 步：确认电脑上有 uv
+
+插件靠 uv（Python 环境管理工具）运行。先检查：
+
+```powershell
+@((Get-Command uv.exe -ErrorAction SilentlyContinue).Source, "$env:USERPROFILE\.local\bin\uv.exe", "$env:LOCALAPPDATA\Microsoft\WinGet\Links\uv.exe") | Where-Object { $_ -and (Test-Path $_) }
+```
+
+什么都没输出就是没装，运行 `winget install --id=astral-sh.uv -e` 安装；winget 不可用时改用 `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`。装完不用重启：插件的启动脚本会自己去这些位置找 uv。
+
+### 第 2 步（Claude Code）：用插件市场安装
 
 ```powershell
 claude plugin marketplace add https://github.com/pencil102411-cell/xuanshang-canvas
-```
-
-```powershell
 claude plugin install xuanshang-canvas@xuanshang-tools
 ```
 
-第一条是登记插件来源，第二条是安装。装好后**新开一个 Claude Code 会话**就能用。插件自带规则说明（技能 `xuanshang-canvas`），不用另外放规则文件。
-
-如果插件文件夹已经在你电脑上（比如同事拷给你的），把第一条里的地址换成文件夹路径，例如 `claude plugin marketplace add D:\工具\xuanshang-canvas`。
-
-**建议的权限设置**（可选）：只读工具直接放行，花积分的工具每次询问。把 `adapters/claude-code/permissions.json` 里 `plugin` 那组的 `permissions` 合并到 `C:\Users\你的用户名\.claude\settings.json`。
-
-<details>
-<summary>不用插件方式，手动注册（备用）</summary>
-
-先按下面 Codex 第 1 步把插件文件夹放到电脑上，然后运行：
+然后运行自检，顺便把依赖提前装到插件的数据目录（第一次要一两分钟）：
 
 ```powershell
-claude mcp add --transport stdio --scope user xuanshang-canvas -- uv run --frozen --quiet --project C:/工具/xuanshang-canvas xuanshang-canvas-mcp
+$root = (Get-ChildItem "$env:USERPROFILE\.claude\plugins\cache\xuanshang-tools\xuanshang-canvas" -Directory | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+$env:UV_PROJECT_ENVIRONMENT = "$env:USERPROFILE\.claude\plugins\data\xuanshang-canvas-xuanshang-tools\venv"
+powershell -NoProfile -ExecutionPolicy Bypass -File "$root\scripts\start-mcp.ps1" --check
 ```
 
-手动注册时规则说明不会自动带上，需要把插件文件夹里的 `skills/xuanshang-canvas` 整个文件夹复制到 `C:\Users\你的用户名\.claude\skills\`。权限建议用 `permissions.json` 里 `manual` 那组。
-</details>
+画布开着时会显示「已连接」；画布没开会提示先打开画布，这也说明插件本身装好了。最后告诉用户新开一个会话。插件自带规则说明（技能 `xuanshang-canvas`），不用另外放规则文件。
 
-### Codex
+可选：用户同意的话，把 `adapters/claude-code/permissions.json` 里 `plugin` 那组的 `permissions` 合并到 `~/.claude/settings.json`（只读工具直接放行，花积分的工具每次询问）。
 
-1. **把插件文件夹放到电脑上**（只做一次）。在 PowerShell 里运行下面这条，它会把插件下载到 `C:\工具\xuanshang-canvas`：
+### 第 2 步（Codex）：下载插件文件夹并登记
 
-   ```powershell
-   git clone https://github.com/pencil102411-cell/xuanshang-canvas C:\工具\xuanshang-canvas
-   ```
-
-   不想用 git 的话，下载仓库的压缩包，解压到同样的位置也行。
-2. **自检并提前装好依赖**（第一次要一两分钟）：
+1. 下载插件到 `%USERPROFILE%\xuanshang-canvas`（不需要 git）。升级时先删掉旧文件夹：
 
    ```powershell
-   uv run --frozen --project C:\工具\xuanshang-canvas xuanshang-canvas-mcp --check
+   $zip = "$env:TEMP\xuanshang-canvas.zip"; $tmp = "$env:TEMP\xuanshang-canvas-unzip"
+   Invoke-WebRequest https://github.com/pencil102411-cell/xuanshang-canvas/archive/refs/heads/main.zip -OutFile $zip
+   Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue; Expand-Archive $zip $tmp
+   Move-Item "$tmp\xuanshang-canvas-main" "$env:USERPROFILE\xuanshang-canvas"
    ```
 
-   画布开着时，最后会显示「已连接」；画布没开会提示先打开画布，这也说明插件本身装好了。
-3. 用记事本打开 `C:\Users\你的用户名\.codex\config.toml`，把 `adapters/codex/config.toml` 里的内容复制到文件末尾，把里面的 `C:/工具/xuanshang-canvas` 换成你实际放的位置，保存。
-   - 这段配置已经把等待时间调长了：Codex 默认插件启动只等 10 秒、每次调用只等 60 秒，上传视频、等认证、等你点确认都要时间，默认值不够用。
-   - 花积分的两个工具设成了每次都要你在 Codex 里批准。
-4. 把插件文件夹里的 `adapters/codex/skills/xuanshang-canvas` 整个文件夹复制到 `C:\Users\你的用户名\.agents\skills\`（没有这个文件夹就新建）。这是给 Codex 的规则说明。
-5. 重启 Codex。
+2. 自检并提前装好依赖：
 
-### 其他支持 MCP 的工具（Cursor、Claude Desktop、Gemini CLI、VS Code 等）
+   ```powershell
+   powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\xuanshang-canvas\scripts\start-mcp.ps1" --check
+   ```
 
-先按 Codex 的第 1、2 步把插件文件夹放好并自检，再照 `adapters/generic/` 里的示例添加配置（VS Code 用 `vscode-mcp.json` 的写法，其他用 `mcp.json`）。这些工具没有专门的规则文件，规则主要靠插件代码强制执行和工具说明。
+3. 把 `adapters/codex/config.toml` 的内容加到 `%USERPROFILE%\.codex\config.toml` 末尾，把里面的 `C:/Users/你的用户名/xuanshang-canvas` 换成实际路径（用正斜杠）。已经有 `[mcp_servers.xuanshang-canvas]` 这一段时，替换掉旧的。这段配置把等待时间调长了（Codex 默认启动只等 10 秒、每次调用只等 60 秒，不够用），花积分的两个工具设成每次都要用户批准。
+4. 把 `adapters/codex/skills/xuanshang-canvas` 整个文件夹复制到 `%USERPROFILE%\.agents\skills\`（没有就新建）。这是给 Codex 的规则说明。
+5. 告诉用户重启 Codex。
+
+### 第 2 步（其他 MCP 工具：Cursor、Claude Desktop、Gemini CLI、VS Code 等）
+
+按 Codex 的第 1、2 步下载并自检，再照 `adapters/generic/` 里的示例添加配置（VS Code 用 `vscode-mcp.json`，其他用 `mcp.json`），把路径换成实际位置。这些工具没有专门的规则文件，规则主要靠插件代码强制执行和工具说明。
 
 ---
 
-## 三、确认装好了
-
-1. 打开画布。
-2. 在 AI 工具里新开一个会话，说：**「用 canvas_status 看看画布连上了没有」**。
-3. 看到「已连接」和画布名字、端口，就装好了。
-
-第一次启动要下载依赖，可能要等半分钟左右；以后就快了。
-
----
-
-## 四、日常怎么用
+## 三、日常怎么用
 
 直接用中文跟 AI 说要做什么，例如：
 
+- 「新建一个项目，叫『第09集-场12』」
+- 「在第09集-场12 这个项目里建三个认证分组：人物、场景、参考视频」
 - 「看看 16-20 测试这个项目里有哪些视频节点」
 - 「把 D:\素材\司徒陌-面部.png 传到 16-20 测试项目的人物分组，认证完放到画布上」
 - 「把 D:\预演\镜127.mp4 作为参考视频上传认证，放到画布上」
@@ -111,7 +102,7 @@ AI 会按插件的规则来做，做完会告诉你结果、核对情况和需�
 
 ---
 
-## 五、插件会替你守住的规则（摘要）
+## 四、插件会替你守住的规则（摘要）
 
 完整规则见 [rules/RULES.md](rules/RULES.md)，这里说最常碰到的几条：
 
@@ -129,7 +120,7 @@ AI 会按插件的规则来做，做完会告诉你结果、核对情况和需�
 
 ---
 
-## 六、配置项（可选）
+## 五、配置项（可选）
 
 不配置也能用。要改默认参数，新建 `C:\Users\你的用户名\AppData\Roaming\xuanshang-canvas\config.json`，只写要改的项：
 
@@ -167,7 +158,7 @@ AI 会按插件的规则来做，做完会告诉你结果、核对情况和需�
 
 ---
 
-## 七、常见问题
+## 六、常见问题
 
 **提示「请先打开玄上无限画布」**：画布没开，或者刚开还没启动完。打开画布、等界面出来后再试。
 
@@ -183,11 +174,11 @@ AI 会按插件的规则来做，做完会告诉你结果、核对情况和需�
 
 **提示「画布版本和插件不兼容」**：画布升级后内部接口变了。把报错发给插件维护者。
 
-**Claude Code / Codex 说插件启动失败**：在 PowerShell 里运行 `uv --version` 看 uv 装好没有；再运行一次上面的自检命令（`uv run ... --check`），它会把依赖装好并显示具体报错。第一次启动要下载依赖，网络慢时可能超时，自检通过后再试一次。
+**Claude Code / Codex 说插件启动失败（比如 Connection closed）**：跟 AI 说「按玄上画布插件 README 里给 AI 的安装步骤，重新检查 uv 并运行自检」。自检会把依赖装好并显示具体报错。第一次启动要下载依赖，网络慢时可能超时，自检通过后再新开会话试一次。
 
 ---
 
-## 八、已验证的画布版本
+## 七、已验证的画布版本
 
 | 程序 | 构建号 | 状态 |
 |---|---|---|
@@ -198,7 +189,7 @@ AI 会按插件的规则来做，做完会告诉你结果、核对情况和需�
 
 ---
 
-## 九、给维护者
+## 八、给维护者
 
 ```
 xuanshang-canvas/
@@ -214,14 +205,17 @@ xuanshang-canvas/
 │   ├── claude-code/         # 权限建议
 │   ├── codex/               # config.toml 片段、规则文件（自动生成）
 │   └── generic/             # 其他 MCP 工具的配置示例
-├── scripts/build_adapters.py
+├── scripts/                 # start-mcp.ps1 启动插件；build_adapters.py 生成规则文件
 ├── pyproject.toml           # 直接依赖，固定版本
 └── uv.lock                  # 全部间接依赖的固定版本
 ```
 
 - 改规则只改 `rules/RULES.md`，然后运行 `python scripts/build_adapters.py` 重新生成各家的规则文件；`--check` 只检查是否一致。MCP 服务的使用说明直接读 `RULES.md`。
-- 为什么 Claude Code 插件放在仓库根目录而不是 `adapters/claude-code/`：插件启动时用 `uv run --project ${CLAUDE_PLUGIN_ROOT}` 从插件自己的文件夹运行，插件目录里必须有 Python 源码。依赖装在 `${CLAUDE_PLUGIN_DATA}/venv`，插件更新时保留。
+- 所有 AI 工具都通过 `scripts/start-mcp.ps1` 启动插件。它自己去 uv 的常见安装位置找 uv，再运行 `uv run --frozen --quiet --project <插件目录> xuanshang-canvas-mcp`。不直接写 `uv`，是因为 Windows 上刚装好 uv 时，已经开着的程序（包括 Claude 应用）看不到新的 PATH，会报 Connection closed。
+- 为什么 Claude Code 插件放在仓库根目录而不是 `adapters/claude-code/`：启动脚本要从插件自己的文件夹运行，插件目录里必须有 Python 源码。依赖装在 `${CLAUDE_PLUGIN_DATA}/venv`，插件更新时保留。
 - 为什么用 `uv run --frozen --project` 而不是 `uvx --from`：在开着 Windows Defender 的电脑上实测，uvx 在临时目录里装依赖时会被 Defender 锁住 pywin32 的文件而失败（`os error 32`）；装到固定目录（`uv run`、`uv tool install`）没有这个问题。`--frozen` 按 `uv.lock` 装，所有间接依赖的版本也是固定的。
+- `start-mcp.ps1` 要保存成带 BOM 的 UTF-8，否则 Windows PowerShell 5.1 读中文会乱码。
 - 依赖升级：改 `pyproject.toml` 后运行 `uv lock`，测完再发布。
-- 本地调试：`uv run --project . xuanshang-canvas-mcp --check`；或在 Claude Code 里 `claude --plugin-dir .` 临时加载。
+- 本地调试：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts\start-mcp.ps1 --check`；或在 Claude Code 里 `claude --plugin-dir .` 临时加载。
+- 发新版：改 `.claude-plugin/plugin.json`、`pyproject.toml`、`src/xuanshang_canvas/__init__.py` 里的版本号，运行 `uv lock`，推到 GitHub。已安装的用户运行 `claude plugin marketplace update xuanshang-tools` 再 `claude plugin update xuanshang-canvas@xuanshang-tools`。
 - 画布接口细节见 `docs/api-notes.md`。画布升级后先跑 `canvas_status` 看兼容性检查。

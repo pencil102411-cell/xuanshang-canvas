@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "xuanshang-canvas": {
-      "command": "uv",
-      "args": ["run", "--frozen", "--quiet", "--project", "${CLAUDE_PLUGIN_ROOT}", "xuanshang-canvas-mcp"],
+      "command": "powershell",
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${CLAUDE_PLUGIN_ROOT}/scripts/start-mcp.ps1"],
       "env": {
         "UV_PROJECT_ENVIRONMENT": "${CLAUDE_PLUGIN_DATA}/venv"
       }

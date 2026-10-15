@@ -1,9 +1,9 @@
-# 把下面这段复制到 ~/.codex/config.toml（Windows 是 C:\Users\你的用户名\.codex\config.toml）末尾。
-# 把 C:/工具/xuanshang-canvas 换成插件文件夹在你电脑上的实际位置（用正斜杠 / 或双反斜杠 \\）。
+# 把下面这段加到 ~/.codex/config.toml（Windows 是 C:\Users\你的用户名\.codex\config.toml）末尾。
+# 把 C:/Users/你的用户名/xuanshang-canvas 换成插件文件夹在电脑上的实际位置（用正斜杠 /）。
 
 [mcp_servers.xuanshang-canvas]
-command = "uv"
-args = ["run", "--frozen", "--quiet", "--project", "C:/工具/xuanshang-canvas", "xuanshang-canvas-mcp"]
+command = "powershell"
+args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "C:/Users/你的用户名/xuanshang-canvas/scripts/start-mcp.ps1"]
 # 第一次启动要下载依赖，默认 10 秒不够，调到 120 秒
 startup_timeout_sec = 120
 # 上传大视频、等认证、等用户点确认都需要时间，默认 60 秒不够，调到 300 秒

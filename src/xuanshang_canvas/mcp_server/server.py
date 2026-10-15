@@ -198,6 +198,26 @@ def get_task(
 
 
 @mcp.tool(annotations=WRITE)
+def create_project(
+    name: Annotated[str, Field(description="新项目的名称，比如「第08集-场10」。不能和已有项目重名")],
+    description: Annotated[str | None, Field(description="项目说明，可不填")] = None,
+) -> dict[str, Any]:
+    """在画布里新建一个空项目。已经有同名项目时会拒绝（避免以后选错项目），请换个名字或直接用原来的项目。"""
+    return _safe(lambda: service.create_project(name, description))
+
+
+@mcp.tool(annotations=WRITE)
+def create_certified_group(
+    project: ProjectArg,
+    name: Annotated[str, Field(description="新认证分组的名称，比如「人物」「场景」「参考视频」。不能和这个项目里已有的分组重名")],
+    description: Annotated[str | None, Field(description="分组说明，可不填")] = None,
+) -> dict[str, Any]:
+    """在项目里新建一个认证分组（玄上那边也会同时建好），之后上传认证素材时选它。
+    注意：玄上没有删除分组的接口，建了就删不掉，名字要先和用户确认。同名分组已存在时会拒绝。"""
+    return _safe(lambda: service.create_certified_group(project, name, description))
+
+
+@mcp.tool(annotations=WRITE)
 async def upload_certified_image(
     project: ProjectArg,
     file_path: Annotated[str, Field(description="本地图片的完整路径，如 C:\\素材\\司徒陌-面部.png")],

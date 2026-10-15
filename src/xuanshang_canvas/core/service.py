@@ -426,7 +426,84 @@ class CanvasService:
             listing = "；".join(f"{m.get('id')}" for m in matches)
             raise CanvasError(f"这个项目里有 {len(matches)} 个分组都叫「{key}」（ID：{listing}），请用分组 ID 指定。")
         names = "、".join(f"{item.get('name')}" for item in groups) or "（这个项目还没有认证分组）"
-        raise CanvasError(f"项目「{project.get('name')}」里没有叫「{key}」的认证分组。现有分组：{names}。新分组请在画布里创建。")
+        raise CanvasError(
+            f"项目「{project.get('name')}」里没有叫「{key}」的认证分组。现有分组：{names}。"
+            "要新建的话，先问用户确认分组名，再用 create_certified_group 建。"
+        )
+
+    # ------------------------------------------------------------------ 新建项目和认证分组
+
+    def create_project(self, name: str, description: str | None = None) -> dict[str, Any]:
+        """新建画布项目。同名项目已存在时拒绝：项目名重复后很容易选错。"""
+        client = self.connect()
+        key = str(name or "").strip()
+        if not key:
+            raise CanvasError("项目名称不能为空。")
+        if len(key) > 100:
+            raise RuleViolation(f"项目名称太长了（{len(key)} 个字），请控制在 100 个字以内。")
+        same = [item for item in client.get("/api/projects") if str(item.get("name", "")).strip() == key]
+        if same:
+            raise RuleViolation(
+                f"已经有叫「{key}」的项目了（ID {same[0].get('id')}）。项目名重复后很容易选错，请换个名字；"
+                "要用原来那个项目就直接用它。"
+            )
+        created = client.post("/api/projects", {"name": key, "description": (description or "").strip()})
+        project_id = created.get("id")
+        saved = client.get(f"/api/projects/{project_id}")
+        problems = []
+        if str(saved.get("name", "")).strip() != key:
+            problems.append(f"读回的项目名是「{saved.get('name')}」，和请求的不一样")
+        return {
+            "项目名": saved.get("name"),
+            "项目ID": project_id,
+            "项目文件夹": saved.get("cacheDir"),
+            "读回核对": "一致" if not problems else problems,
+            "下一步": "要上传认证素材的话，先用 create_certified_group 在这个项目里建认证分组。",
+        }
+
+    def create_certified_group(self, project: str, name: str, description: str | None = None) -> dict[str, Any]:
+        """在项目里新建认证分组（同时在玄上那边建分组）。同名分组已存在时拒绝：重名后很容易传错分组。"""
+        proj = self.resolve_project(project)
+        key = str(name or "").strip()
+        if not key:
+            raise CanvasError("分组名称不能为空。")
+        if len(key) > 64:
+            raise RuleViolation(f"分组名称太长了（{len(key)} 个字），请控制在 64 个字以内。")
+        existing = self._groups(proj["id"])
+        same = [item for item in existing if str(item.get("name", "")).strip() == key]
+        if same:
+            raise RuleViolation(
+                f"项目「{proj.get('name')}」里已经有叫「{key}」的认证分组了（ID {same[0].get('id')}），可以直接用。"
+                "名字重复后很容易传错分组，所以不再新建。"
+            )
+        try:
+            created = self.connect().post(
+                "/api/certified-assets/groups",
+                {
+                    "projectId": proj["id"],
+                    "name": key,
+                    "description": (description or "").strip(),
+                    "providerId": PROVIDER,
+                    "projectName": REMOTE_PROJECT,
+                },
+            )
+        except CanvasApiError as exc:
+            raise CanvasApiError(f"建分组失败，画布原始报错：{exc.message}", status=exc.status, code=exc.code, raw=exc.raw) from exc
+        group_id = created.get("id")
+        saved = next((item for item in self._groups(proj["id"]) if item.get("id") == group_id), None)
+        problems = []
+        if saved is None:
+            problems.append("读回时这个项目的分组列表里没有新分组")
+        elif str(saved.get("name", "")).strip() != key:
+            problems.append(f"读回的分组名是「{saved.get('name')}」，和请求的不一样")
+        return {
+            "分组名": key,
+            "分组ID": group_id,
+            "项目": {"名称": proj.get("name"), "ID": proj["id"]},
+            "读回核对": "一致" if not problems else problems,
+            "注意": "玄上那边没有删除分组的接口，分组建了就删不掉，以后起名前先想好。",
+            "下一步": "可以用 upload_certified_image / upload_certified_video 往这个分组上传素材。",
+        }
 
     def _remote_asset(self, asset_id: str) -> dict[str, Any]:
         return self.connect().post(

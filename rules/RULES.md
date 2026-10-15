@@ -4,13 +4,13 @@
 
 ## 适用范围
 
-用户让你操作「玄上无限画布」（含玄上内部版）时使用：查项目和节点、上传认证图片和参考视频、把认证素材放到画布上、新建 Seedance 视频节点、提交生成、样片转成片、查任务进度。所有操作都通过 `xuanshang-canvas` 这组工具完成，不要自己写脚本去调画布的内部接口。
+用户让你操作「玄上无限画布」（含玄上内部版）时使用：新建项目和认证分组、查项目和节点、上传认证图片和参考视频、把认证素材放到画布上、新建 Seedance 视频节点、提交生成、样片转成片、查任务进度。所有操作都通过 `xuanshang-canvas` 这组工具完成，不要自己写脚本去调画布的内部接口。
 
 ## 标准流程
 
 1. `canvas_status`：确认画布开着、连得上。同时开了多个画布时，问用户要用哪个，再带 `port` 调一次选定。
-2. `list_projects` → `get_graph_summary`：找到项目，看清已有的视频节点、认证素材节点。
-3. 需要新素材时：`list_certified_groups` 看分组 → `upload_certified_image` / `upload_certified_video` 上传并认证 → `add_certified_asset_node` 放到画布上。
+2. `list_projects` → `get_graph_summary`：找到项目，看清已有的视频节点、认证素材节点。用户要开新项目时用 `create_project`。
+3. 需要新素材时：`list_certified_groups` 看分组（没有合适的分组就用 `create_certified_group` 新建）→ `upload_certified_image` / `upload_certified_video` 上传并认证 → `add_certified_asset_node` 放到画布上。
 4. `create_video_node`：按顺序给图片节点和视频节点，写提示词，建视频节点。
 5. 用户明确要生成时：`submit_generation`。样片满意、用户要成片时：`create_final_video`。
 6. 用户问进度时：`get_task`。提交后不要自己反复查。
@@ -30,6 +30,11 @@
 8. **生成前必须确认**：`submit_generation`、`create_final_video` 会花积分，每次都要用户单独确认，上一次的确认不沿用。见下面「确认机制」。
 9. **提交后不轮询**：提交只返回任务 ID 和节点名。用户问进度时才用 `get_task` 查。
 10. **建完就核对**：新建节点后插件会马上读回核对提示词、素材顺序和参数，把核对结果告诉用户。
+
+## 新建项目和分组
+
+- 项目名、分组名不能和已有的重名，重名时工具会拒绝，换个名字或直接用已有的。
+- **认证分组建了就删不掉**（玄上没有删除分组的接口）。用户没有明确说分组名时，先问清楚再建，不要自己起名。
 
 ## 素材来源规则
 

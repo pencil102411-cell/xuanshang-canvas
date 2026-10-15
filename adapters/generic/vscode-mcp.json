@@ -2,8 +2,8 @@
   "servers": {
     "xuanshang-canvas": {
       "type": "stdio",
-      "command": "uv",
-      "args": ["run", "--frozen", "--quiet", "--project", "C:/工具/xuanshang-canvas", "xuanshang-canvas-mcp"]
+      "command": "powershell",
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "C:/Users/你的用户名/xuanshang-canvas/scripts/start-mcp.ps1"]
     }
   }
 }
