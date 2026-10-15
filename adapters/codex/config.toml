@@ -6,12 +6,5 @@ command = "powershell"
 args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "C:/Users/你的用户名/xuanshang-canvas/scripts/start-mcp.ps1"]
 # 第一次启动要下载依赖，默认 10 秒不够，调到 120 秒
 startup_timeout_sec = 120
-# 上传大视频、等认证、等用户点确认都需要时间，默认 60 秒不够，调到 300 秒
+# 上传大视频、等认证都需要时间，默认 60 秒不够，调到 300 秒
 tool_timeout_sec = 300
-
-# 花积分的两个工具：每次都要用户在 Codex 里批准（插件自己的确认窗口之外再加一道）
-[mcp_servers.xuanshang-canvas.tools.submit_generation]
-approval_mode = "prompt"
-
-[mcp_servers.xuanshang-canvas.tools.create_final_video]
-approval_mode = "prompt"

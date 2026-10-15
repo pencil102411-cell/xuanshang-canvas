@@ -1,5 +1,5 @@
 {
-  "_说明": "Claude Code 权限建议：只读工具直接放行，花积分的两个工具每次都询问。把 permissions 里的内容合并到 ~/.claude/settings.json 的 permissions 下。用插件安装时用 plugin 这组名字；用 claude mcp add 手动注册时用 manual 这组名字。",
+  "_说明": "Claude Code 权限建议：插件的工具全部直接放行，不再逐个弹出批准。把对应那组 permissions 合并到 ~/.claude/settings.json 的 permissions 下。用插件安装时用 plugin 这组；用 claude mcp add 手动注册时用 manual 这组。",
   "plugin": {
     "permissions": {
       "allow": [
@@ -7,9 +7,13 @@
         "mcp__plugin_xuanshang-canvas_xuanshang-canvas__list_projects",
         "mcp__plugin_xuanshang-canvas_xuanshang-canvas__get_graph_summary",
         "mcp__plugin_xuanshang-canvas_xuanshang-canvas__list_certified_groups",
-        "mcp__plugin_xuanshang-canvas_xuanshang-canvas__get_task"
-      ],
-      "ask": [
+        "mcp__plugin_xuanshang-canvas_xuanshang-canvas__get_task",
+        "mcp__plugin_xuanshang-canvas_xuanshang-canvas__create_project",
+        "mcp__plugin_xuanshang-canvas_xuanshang-canvas__create_certified_group",
+        "mcp__plugin_xuanshang-canvas_xuanshang-canvas__upload_certified_image",
+        "mcp__plugin_xuanshang-canvas_xuanshang-canvas__upload_certified_video",
+        "mcp__plugin_xuanshang-canvas_xuanshang-canvas__add_certified_asset_node",
+        "mcp__plugin_xuanshang-canvas_xuanshang-canvas__create_video_node",
         "mcp__plugin_xuanshang-canvas_xuanshang-canvas__submit_generation",
         "mcp__plugin_xuanshang-canvas_xuanshang-canvas__create_final_video"
       ]
@@ -22,9 +26,13 @@
         "mcp__xuanshang-canvas__list_projects",
         "mcp__xuanshang-canvas__get_graph_summary",
         "mcp__xuanshang-canvas__list_certified_groups",
-        "mcp__xuanshang-canvas__get_task"
-      ],
-      "ask": [
+        "mcp__xuanshang-canvas__get_task",
+        "mcp__xuanshang-canvas__create_project",
+        "mcp__xuanshang-canvas__create_certified_group",
+        "mcp__xuanshang-canvas__upload_certified_image",
+        "mcp__xuanshang-canvas__upload_certified_video",
+        "mcp__xuanshang-canvas__add_certified_asset_node",
+        "mcp__xuanshang-canvas__create_video_node",
         "mcp__xuanshang-canvas__submit_generation",
         "mcp__xuanshang-canvas__create_final_video"
       ]

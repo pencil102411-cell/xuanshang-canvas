@@ -24,7 +24,8 @@ DEFAULT_VIDEO_PARAMS: dict[str, Any] = {
     "duration": 5,
 }
 
-CONFIRM_MODES = ("auto", "elicitation", "popup", "code")
+# 0.3.0 起去掉了生成前的确认弹窗，旧配置里的这些项直接忽略。
+OBSOLETE_KEYS = {"confirm_mode", "popup_timeout_seconds", "confirm_code_ttl_seconds"}
 
 
 def default_config_path() -> Path:
@@ -49,10 +50,6 @@ class Settings:
     certify_poll_seconds: float = 3.0
     # 规则 4：上传后大小差异在这个比例以内只提示，超过就报错。
     size_tolerance: float = 0.05
-    # 规则 8：确认方式。auto = 能弹 AI 工具的确认框就用它，否则弹 Windows 窗口，再不行用确认码。
-    confirm_mode: str = "auto"
-    popup_timeout_seconds: float = 45.0
-    confirm_code_ttl_seconds: float = 300.0
     http_timeout_seconds: float = 30.0
     upload_timeout_seconds: float = 900.0
     source: str = "默认值"
@@ -88,22 +85,11 @@ def load_settings() -> Settings:
         port = os.environ.get("CANVAS_PORT")
         if port and port.strip():
             settings.canvas_port = int(port)
-        for env, attr in (
-            ("XUANSHANG_CERTIFY_WAIT_SECONDS", "certify_wait_seconds"),
-            ("XUANSHANG_POPUP_TIMEOUT_SECONDS", "popup_timeout_seconds"),
-        ):
-            number = _env_number(env)
-            if number is not None:
-                setattr(settings, attr, number)
+        number = _env_number("XUANSHANG_CERTIFY_WAIT_SECONDS")
+        if number is not None:
+            settings.certify_wait_seconds = number
     except ValueError as exc:
         settings.warnings.append(str(exc))
-
-    mode = os.environ.get("XUANSHANG_CONFIRM_MODE")
-    if mode:
-        settings.confirm_mode = mode.strip().lower()
-    if settings.confirm_mode not in CONFIRM_MODES:
-        settings.warnings.append(f"确认方式「{settings.confirm_mode}」无效，已改用 auto（可选：{'、'.join(CONFIRM_MODES)}）")
-        settings.confirm_mode = "auto"
     return settings
 
 
@@ -120,8 +106,6 @@ def _apply(settings: Settings, raw: dict[str, Any]) -> None:
             "certify_wait_seconds",
             "certify_poll_seconds",
             "size_tolerance",
-            "popup_timeout_seconds",
-            "confirm_code_ttl_seconds",
             "http_timeout_seconds",
             "upload_timeout_seconds",
         }:
@@ -129,7 +113,7 @@ def _apply(settings: Settings, raw: dict[str, Any]) -> None:
                 setattr(settings, key, float(value))
             except (TypeError, ValueError):
                 settings.warnings.append(f"配置项 {key} 应该是数字，已忽略")
-        elif key == "confirm_mode":
-            settings.confirm_mode = str(value).strip().lower()
+        elif key in OBSOLETE_KEYS:
+            continue
         else:
             settings.warnings.append(f"不认识的配置项 {key}，已忽略")

@@ -1,8 +1,4 @@
-"""核心操作。MCP 服务和以后的命令行工具都调用这里，所以不管接的是哪个 AI 工具，行为都一样。
-
-需要使用者确认的操作（花积分、超大图压缩）分两步：先 plan_xxx() 生成确认单和要执行的动作，
-确认通过后再执行。确认方式由调用方决定（见 confirm.py）。
-"""
+"""核心操作。MCP 服务和以后的命令行工具都调用这里，所以不管接的是哪个 AI 工具，行为都一样。"""
 
 from __future__ import annotations
 
@@ -11,15 +7,13 @@ import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from . import graph as g
 from .client import CanvasClient, probe_canvas
 from .config import Settings, data_dir, load_settings
-from .confirm import ConfirmCodes, ConfirmRequest
 from .discovery import CanvasInstance, find_instances, instance_for_port
 from .errors import CanvasApiError, CanvasConnectionError, CanvasError, RuleViolation
 from .media import IMAGE_EXTENSIONS, MAX_IMAGE_SIDE, RESIZED_LONG_SIDE, VIDEO_EXTENSIONS, local_image_info, transfer_name, verify_upload
@@ -40,14 +34,6 @@ VIDEO_NODE_DEFAULTS = {
     "executionExpiresAfter": 172800,
 }
 PARAM_KEYS = ["model", "seedanceMode", "resolution", "ratio", "duration", "seed", "outputFormat", "webSearch"]
-
-
-@dataclass
-class Plan:
-    """一个准备好的操作。request 不为空时，必须先让使用者确认再调用 run()。"""
-
-    request: ConfirmRequest | None
-    run: Callable[[], dict[str, Any]]
 
 
 def _fmt_time(ms: Any) -> str | None:
@@ -96,7 +82,6 @@ class NameStore:
 class CanvasService:
     def __init__(self, settings: Settings | None = None):
         self.settings = settings or load_settings()
-        self.codes = ConfirmCodes(self.settings.confirm_code_ttl_seconds)
         self.names = NameStore(data_dir() / "asset-names.json")
         self._selected_port: int | None = self.settings.canvas_port
         self._instance: CanvasInstance | None = None
@@ -231,12 +216,6 @@ class CanvasService:
             "兼容性问题": (self._compat or {}).get("problems") or [],
             "已验证版本": "是" if build in VERIFIED_BUILDS else ("未知（没读到构建号）" if not build else "否，这个构建号还没实测过，用的时候留意报错"),
             "项目数量": len(projects),
-            "确认方式": {
-                "auto": "自动（AI 工具确认框 → Windows 确认窗口 → 确认码）",
-                "elicitation": "只用 AI 工具确认框",
-                "popup": "只用 Windows 确认窗口",
-                "code": "只用两步确认码（软限制）",
-            }[self.settings.confirm_mode],
             "认证等待上限秒数": self.settings.certify_wait_seconds,
             "配置来源": self.settings.source,
         }
@@ -607,7 +586,15 @@ class CanvasService:
 
     # ------------------------------------------------------------------ 上传认证素材
 
-    def plan_upload(self, project: str, file_path: str, group: str, display_name: str | None, kind: str) -> Plan:
+    def upload(
+        self,
+        project: str,
+        file_path: str,
+        group: str,
+        display_name: str | None,
+        kind: str,
+        allow_resize: bool = False,
+    ) -> dict[str, Any]:
         proj = self.resolve_project(project)
         path = Path(str(file_path or "").strip().strip('"')).expanduser()
         if not path.is_absolute():
@@ -621,30 +608,19 @@ class CanvasService:
         group_obj = self._resolve_group(proj, group)
         display = (display_name or path.name).strip() or path.name
         needs_resize = False
-        dims = None
         if kind == "image":
             info = local_image_info(path)
             if info is None:
                 raise RuleViolation(f"读不出这张图片的尺寸，可能文件损坏或不是真正的 {ext} 图片：{path}")
-            dims = (info[1], info[2])
-            needs_resize = max(dims) > MAX_IMAGE_SIDE
-
-        def run() -> dict[str, Any]:
-            return self._upload(proj, path, group_obj, display, kind, needs_resize)
-
-        if not needs_resize:
-            return Plan(None, run)
-        request = ConfirmRequest(
-            action="upload_resize",
-            title="玄上画布插件 · 图片会被压缩",
-            sheet=(
-                f"图片「{path.name}」是 {dims[0]}×{dims[1]}，长边超过 {MAX_IMAGE_SIDE}px。\n"
-                f"上传时画布会自动把长边缩到 {RESIZED_LONG_SIDE}px 并转成 JPEG，画质会有损失。\n\n"
-                f"项目：{proj.get('name')}\n分组：{group_obj.get('name')}\n\n确定按压缩后的版本上传吗？"
-            ),
-            payload={"project": proj["id"], "file": str(path), "size": path.stat().st_size, "group": group_obj["id"]},
-        )
-        return Plan(request, run)
+            needs_resize = max(info[1], info[2]) > MAX_IMAGE_SIDE
+            # 规则 4：超过 6000px 会被画布压缩，必须先告诉用户、用户同意后才传。
+            if needs_resize and not allow_resize:
+                raise RuleViolation(
+                    f"没有上传：图片「{path.name}」是 {info[1]}×{info[2]}，长边超过 {MAX_IMAGE_SIDE}px，"
+                    f"上传时画布会把长边缩到 {RESIZED_LONG_SIDE}px 并转成 JPEG，画质会有损失。"
+                    "请先告诉用户；用户同意压缩后，带上 allow_resize=true 再调用一次。也可以让用户自己先把图缩小。"
+                )
+        return self._upload(proj, path, group_obj, display, kind, needs_resize)
 
     def _upload(self, proj: dict[str, Any], path: Path, group: dict[str, Any], display: str, kind: str, resized: bool) -> dict[str, Any]:
         client = self.connect()
@@ -956,8 +932,9 @@ class CanvasService:
         return f"{label}（{node_type}）不能当素材接入"
 
     # ------------------------------------------------------------------ 提交生成 / 转成片（花积分）
+    # 不再弹确认：用户自己检查过提示词和画布才会下达生成指令。规则里要求 AI 只在用户明确要求时调用。
 
-    def plan_submit(self, project: str, node: str) -> Plan:
+    def submit_generation(self, project: str, node: str) -> dict[str, Any]:
         proj = self.resolve_project(project)
         graph = self._graph(proj["id"])
         tasks = self._tasks(proj["id"])
@@ -968,7 +945,7 @@ class CanvasService:
         if running:
             task = running[0]
             raise RuleViolation(
-                f"「{g.label_of(target)}」已经有任务在跑（任务 {task.get('id')}，{TASK_STATUS.get(task.get('status'))}）。"
+                f"没有提交：「{g.label_of(target)}」已经有任务在跑（任务 {task.get('id')}，{TASK_STATUS.get(task.get('status'))}）。"
                 "一个节点同一时间只能跑一个任务，等它结束再提交，或者新建一个节点。"
             )
         data = target.get("data") or {}
@@ -980,48 +957,23 @@ class CanvasService:
         if at_refs:
             warnings.append(
                 "提示词里有 @ 写法的引用（" + "、".join(at_refs[:5]) + "），画布不会把它当成素材引用。"
-                "建议用 create_video_node 新建一个节点（插件会自动改成 (图片N) 写法）再提交"
+                "以后可以用 create_video_node 新建节点（插件会自动改成 (图片N) 写法）"
             )
-        for item in inputs:
-            if item.get("认证状态") and item["认证状态"] != CERT_STATUS["Active"]:
-                warnings.append(f"{item['编号']}「{item['节点名']}」{item['认证状态']}，画布会拒绝提交")
-            if item.get("有输出") is False:
-                warnings.append(f"{item['编号']}「{item['节点名']}」还没有生成结果，画布会拒绝提交")
-        sheet_lines = [
-            f"项目：{proj.get('name')}",
-            f"节点：{g.label_of(target)}",
-            f"参数：{describe_params(data)}",
-            "素材：" + ("；".join(f"{i['编号']} = {i['节点名']}" for i in inputs) or "无"),
-            f"提示词：{_short(data.get('prompt', ''), 200)}",
-        ]
+        task = self.connect().post(f"/api/projects/{proj['id']}/tasks", {"nodeId": target["id"]})
+        result: dict[str, Any] = {
+            "任务ID": task.get("id"),
+            "节点": g.label_of(target),
+            "节点ID": target["id"],
+            "状态": TASK_STATUS.get(task.get("status"), task.get("status")),
+            "参数": describe_params(data),
+            "素材": [f"{i['编号']} = {i['节点名']}" for i in inputs],
+            "说明": "已提交。插件不会自动盯进度；用户问进度时用 get_task 查。",
+        }
         if warnings:
-            sheet_lines.append("注意：" + "；".join(warnings))
-        sheet_lines.append("\n提交后会花积分。确定提交吗？")
-        request = ConfirmRequest(
-            action="submit_generation",
-            title="玄上画布插件 · 提交生成（花积分）",
-            sheet="\n".join(sheet_lines),
-            payload={
-                "project": proj["id"],
-                "node": target["id"],
-                "data": {key: data.get(key) for key in [*PARAM_KEYS, "prompt", "inputAssetOrder"]},
-                "inputs": [i["节点ID"] for i in inputs],
-            },
-        )
+            result["注意"] = warnings
+        return result
 
-        def run() -> dict[str, Any]:
-            task = self.connect().post(f"/api/projects/{proj['id']}/tasks", {"nodeId": target["id"]})
-            return {
-                "任务ID": task.get("id"),
-                "节点": g.label_of(target),
-                "节点ID": target["id"],
-                "状态": TASK_STATUS.get(task.get("status"), task.get("status")),
-                "说明": "已提交。插件不会自动盯进度；要看进度时用 get_task 查。",
-            }
-
-        return Plan(request, run)
-
-    def plan_final_video(self, project: str, task_id: str | None = None, node: str | None = None) -> Plan:
+    def create_final_video(self, project: str, task_id: str | None = None, node: str | None = None) -> dict[str, Any]:
         proj = self.resolve_project(project)
         tasks = self._tasks(proj["id"])
         graph = self._graph(proj["id"])
@@ -1058,25 +1010,13 @@ class CanvasService:
         if problems:
             raise RuleViolation("不能转成片：" + "；".join(problems))
         node_label = g.label_of(by_id[source["nodeId"]]) if source.get("nodeId") in by_id else source.get("nodeId")
-        request = ConfirmRequest(
-            action="create_final_video",
-            title="玄上画布插件 · 样片转成片（花积分）",
-            sheet=(
-                f"项目：{proj.get('name')}\n节点：{node_label}\n样片任务：{source.get('id')}（{_fmt_time(source.get('createdAt'))} 提交）\n"
-                f"成片：1080p · MP4 · 沿用样片的提示词和素材\n\n转成片会花积分。确定转吗？"
-            ),
-            payload={"project": proj["id"], "task": source.get("id")},
-        )
-
-        def run() -> dict[str, Any]:
-            task = self.connect().post(f"/api/projects/{proj['id']}/tasks/create-final-video", {"originalTaskId": source["id"]})
-            return {
-                "任务ID": task.get("id"),
-                "成片节点ID": task.get("nodeId"),
-                "成片节点名": "成片生成",
-                "来自样片节点": node_label,
-                "状态": TASK_STATUS.get(task.get("status"), task.get("status")),
-                "说明": "已提交。画布在样片节点旁边新建了一个「成片生成」节点；插件不会自动盯进度，要看进度时用 get_task 查。",
-            }
-
-        return Plan(request, run)
+        task = self.connect().post(f"/api/projects/{proj['id']}/tasks/create-final-video", {"originalTaskId": source["id"]})
+        return {
+            "任务ID": task.get("id"),
+            "成片节点ID": task.get("nodeId"),
+            "成片节点名": "成片生成",
+            "来自样片节点": node_label,
+            "样片任务": source.get("id"),
+            "状态": TASK_STATUS.get(task.get("status"), task.get("status")),
+            "说明": "已提交（1080p、MP4，沿用样片的提示词和素材）。画布在样片节点旁边新建了一个「成片生成」节点；插件不会自动盯进度，用户问进度时用 get_task 查。",
+        }

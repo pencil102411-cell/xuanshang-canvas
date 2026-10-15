@@ -4,7 +4,7 @@
 
 - **不用每次启动**：在 AI 工具里装一次，以后打开 AI 工具就会在后台自动启动插件，插件再自己去找开着的画布。
 - **不碰你的密钥**：插件不读取、不保存任何 API Key。所有请求都经过你本机的画布，用的是画布里登录的账号和积分。
-- **花积分前必须你点头**：提交生成、转成片每次都会弹确认，你点「是」才提交。
+- **只在你下指令时花积分**：提交生成、转成片只在你明确说要生成时才执行，不会自己主动提交。
 
 ---
 
@@ -56,7 +56,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "$root\scripts\start-mcp.ps1
 
 画布开着时会显示「已连接」；画布没开会提示先打开画布，这也说明插件本身装好了。最后告诉用户新开一个会话。插件自带规则说明（技能 `xuanshang-canvas`），不用另外放规则文件。
 
-可选：用户同意的话，把 `adapters/claude-code/permissions.json` 里 `plugin` 那组的 `permissions` 合并到 `~/.claude/settings.json`（只读工具直接放行，花积分的工具每次询问）。
+可选：用户同意的话，把 `adapters/claude-code/permissions.json` 里 `plugin` 那组的 `permissions` 合并到 `~/.claude/settings.json`（所有插件工具直接放行，不再逐个弹出批准）。
 
 ### 第 2 步（Codex）：下载插件文件夹并登记
 
@@ -75,7 +75,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "$root\scripts\start-mcp.ps1
    powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\xuanshang-canvas\scripts\start-mcp.ps1" --check
    ```
 
-3. 把 `adapters/codex/config.toml` 的内容加到 `%USERPROFILE%\.codex\config.toml` 末尾，把里面的 `C:/Users/你的用户名/xuanshang-canvas` 换成实际路径（用正斜杠）。已经有 `[mcp_servers.xuanshang-canvas]` 这一段时，替换掉旧的。这段配置把等待时间调长了（Codex 默认启动只等 10 秒、每次调用只等 60 秒，不够用），花积分的两个工具设成每次都要用户批准。
+3. 把 `adapters/codex/config.toml` 的内容加到 `%USERPROFILE%\.codex\config.toml` 末尾，把里面的 `C:/Users/你的用户名/xuanshang-canvas` 换成实际路径（用正斜杠）。已经有 `[mcp_servers.xuanshang-canvas]` 这一段时，替换掉旧的。这段配置把等待时间调长了（Codex 默认启动只等 10 秒、每次调用只等 60 秒，不够用）。旧版配置里如果有 `[mcp_servers.xuanshang-canvas.tools.submit_generation]`、`[mcp_servers.xuanshang-canvas.tools.create_final_video]` 这两小段，一起删掉。
 4. 把 `adapters/codex/skills/xuanshang-canvas` 整个文件夹复制到 `%USERPROFILE%\.agents\skills\`（没有就新建）。这是给 Codex 的规则说明。
 5. 告诉用户重启 Codex。
 
@@ -95,7 +95,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "$root\scripts\start-mcp.ps1
 - 「把 D:\素材\司徒陌-面部.png 传到 16-20 测试项目的人物分组，认证完放到画布上」
 - 「把 D:\预演\镜127.mp4 作为参考视频上传认证，放到画布上」
 - 「新建一个视频节点，叫『镜127』，接司徒陌两张图和刚才的参考视频，提示词是……」
-- 「提交镜127」（会弹确认，你点「是」才提交）
+- 「提交镜127」（直接提交，会花积分）
 - 「镜127 的样片好了没有？」「把这个样片转成片」
 
 AI 会按插件的规则来做，做完会告诉你结果、核对情况和需要注意的地方。
@@ -113,10 +113,8 @@ AI 会按插件的规则来做，做完会告诉你结果、核对情况和需�
 | 引用和素材对得上 | 编号不能超过接入的素材数，接入的每个素材都要被引用，否则拒绝创建 |
 | 原质量上传 | 超过 6000px 的图会被画布压缩，先问你；上传后核对大小和尺寸 |
 | 参考视频要认证 | 本地参考视频先上传认证；画布上已经生成好的视频可以直接当参考 |
-| 花积分要确认 | 提交生成、转成片每次都要你单独确认，不沿用上一次 |
+| 只在你下指令时花积分 | 提交生成、转成片只在你明确要求时执行；同一节点已有任务在跑时拒绝，避免重复扣积分 |
 | 提交后不盯进度 | 你问进度时才去查 |
-
-**确认是怎么弹出来的**：AI 工具自己支持确认框的（比如 Claude Code），就在 AI 工具里弹；不支持的，插件会在你电脑上弹一个 Windows 窗口（默认按钮是「否」，45 秒不点算取消）；两种都弹不出来时，才退回「确认码」——AI 先把确认单给你看，你同意后它再提交。
 
 ---
 
@@ -137,9 +135,7 @@ AI 会按插件的规则来做，做完会告诉你结果、核对情况和需�
     "duration": 5
   },
   "certify_wait_seconds": 50,
-  "popup_timeout_seconds": 45,
-  "size_tolerance": 0.05,
-  "confirm_mode": "auto"
+  "size_tolerance": 0.05
 }
 ```
 
@@ -148,11 +144,9 @@ AI 会按插件的规则来做，做完会告诉你结果、核对情况和需�
 | `video_defaults` | 新建视频节点时没指定的参数用这些 | 见上 |
 | `canvas_port` | 写死画布端口（一般不用，插件会自己找） | 不写 |
 | `certify_wait_seconds` | 上传后最多等认证多少秒 | 50 |
-| `popup_timeout_seconds` | 确认框/确认窗口多少秒不点算取消 | 45 |
 | `size_tolerance` | 上传后大小差多少以内只提示不报错 | 0.05（5%） |
-| `confirm_mode` | 确认方式：`auto`、`elicitation`（只用 AI 工具确认框）、`popup`（只用 Windows 窗口）、`code`（只用确认码） | auto |
 
-也可以用环境变量：`CANVAS_PORT`、`XUANSHANG_CONFIRM_MODE`、`XUANSHANG_CERTIFY_WAIT_SECONDS`、`XUANSHANG_POPUP_TIMEOUT_SECONDS`；配置文件位置可用 `XUANSHANG_CANVAS_CONFIG` 指定。
+也可以用环境变量：`CANVAS_PORT`、`XUANSHANG_CERTIFY_WAIT_SECONDS`；配置文件位置可用 `XUANSHANG_CANVAS_CONFIG` 指定。
 
 > 等待时间要比 AI 工具自己的等待上限短。Codex 按上面的配置是 300 秒；如果你把 Codex 的 `tool_timeout_sec` 调得更长，这里也可以跟着调长。
 
@@ -163,8 +157,6 @@ AI 会按插件的规则来做，做完会告诉你结果、核对情况和需�
 **提示「请先打开玄上无限画布」**：画布没开，或者刚开还没启动完。打开画布、等界面出来后再试。
 
 **提示「同时开着 2 个画布」**：比如无限画布和内部版都开着。告诉 AI 用哪个，它会带上端口号选定；只开一个就不会问。
-
-**提交时没弹确认窗口**：先看看是不是被其他窗口挡住了（窗口会置顶，45 秒后自动算取消）。如果一直弹不出来，在配置里把 `confirm_mode` 改成 `code`，改用确认码。
 
 **上传后说「认证中」**：玄上那边认证慢，插件最多等 50 秒就先返回。过一会儿让 AI 用 `list_certified_groups` 查，变成「已认证」后再放到画布上。
 
@@ -182,7 +174,7 @@ AI 会按插件的规则来做，做完会告诉你结果、核对情况和需�
 
 | 程序 | 构建号 | 状态 |
 |---|---|---|
-| 玄上内部版 | 20260923203739 | 已实测：读取、上传认证、放节点、建视频节点、确认机制 |
+| 玄上内部版 | 20260923203739 | 已实测：读取、建项目、上传认证、放节点、建视频节点 |
 | 玄上无限画布 | 20260923203516 | 和内部版同一套接口，待实测 |
 
 `canvas_status` 会显示当前画布的构建号和是否实测过。
