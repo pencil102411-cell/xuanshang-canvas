@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "xuanshang-canvas": {
+      "command": "uv",
+      "args": ["run", "--frozen", "--quiet", "--project", "${CLAUDE_PLUGIN_ROOT}", "xuanshang-canvas-mcp"],
+      "env": {
+        "UV_PROJECT_ENVIRONMENT": "${CLAUDE_PLUGIN_DATA}/venv"
+      }
+    }
+  }
+}

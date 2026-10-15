@@ -1,0 +1,14 @@
+{
+  "name": "xuanshang-tools",
+  "description": "玄上画布相关的 Claude Code 插件",
+  "owner": {
+    "name": "玄上画布插件维护者"
+  },
+  "plugins": [
+    {
+      "name": "xuanshang-canvas",
+      "source": "./",
+      "description": "用统一规则操作本机的玄上无限画布：查项目、上传认证素材和参考视频、建 Seedance 视频节点、提交生成"
+    }
+  ]
+}

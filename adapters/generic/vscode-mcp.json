@@ -1,0 +1,9 @@
+{
+  "servers": {
+    "xuanshang-canvas": {
+      "type": "stdio",
+      "command": "uv",
+      "args": ["run", "--frozen", "--quiet", "--project", "C:/工具/xuanshang-canvas", "xuanshang-canvas-mcp"]
+    }
+  }
+}

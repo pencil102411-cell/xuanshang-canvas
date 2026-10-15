@@ -1,0 +1,14 @@
+{
+  "name": "xuanshang-canvas",
+  "displayName": "玄上画布插件",
+  "version": "0.1.0",
+  "description": "让 Claude Code 用统一规则操作本机的玄上无限画布：查项目、上传认证素材和参考视频、建 Seedance 视频节点、提交生成（花积分前必须确认）。",
+  "author": {
+    "name": "pencil102411-cell",
+    "url": "https://github.com/pencil102411-cell"
+  },
+  "homepage": "https://github.com/pencil102411-cell/xuanshang-canvas",
+  "repository": "https://github.com/pencil102411-cell/xuanshang-canvas",
+  "license": "MIT",
+  "keywords": ["xuanshang", "canvas", "seedance", "mcp"]
+}

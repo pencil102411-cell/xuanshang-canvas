@@ -1,0 +1,17 @@
+# 把下面这段复制到 ~/.codex/config.toml（Windows 是 C:\Users\你的用户名\.codex\config.toml）末尾。
+# 把 C:/工具/xuanshang-canvas 换成插件文件夹在你电脑上的实际位置（用正斜杠 / 或双反斜杠 \\）。
+
+[mcp_servers.xuanshang-canvas]
+command = "uv"
+args = ["run", "--frozen", "--quiet", "--project", "C:/工具/xuanshang-canvas", "xuanshang-canvas-mcp"]
+# 第一次启动要下载依赖，默认 10 秒不够，调到 120 秒
+startup_timeout_sec = 120
+# 上传大视频、等认证、等用户点确认都需要时间，默认 60 秒不够，调到 300 秒
+tool_timeout_sec = 300
+
+# 花积分的两个工具：每次都要用户在 Codex 里批准（插件自己的确认窗口之外再加一道）
+[mcp_servers.xuanshang-canvas.tools.submit_generation]
+approval_mode = "prompt"
+
+[mcp_servers.xuanshang-canvas.tools.create_final_video]
+approval_mode = "prompt"
