@@ -191,7 +191,8 @@ def create_video_node(
     web_search: Annotated[bool | None, Field(description="是否开联网搜索，默认关")] = None,
 ) -> dict[str, Any]:
     """新建 Seedance 视频生成节点并连好素材。会检查：引用格式（自动统一成画布的 (图片N) 写法）、引用编号和接入素材是否对得上、
-    素材是否已认证/已生成、参数是否合规；建完马上读回核对。不会提交生成。"""
+    素材是否已认证/已生成、参数是否合规，以及全文每一处素材编号是否都写成画布能识别的 (图片N)/(视频N)（漏括号、省略、范围写法都会拒绝并指出位置）。
+    建完分别报告「保存核对」和「引用格式检查」。不会提交生成。"""
     overrides = {
         "duration": duration,
         "ratio": ratio,
@@ -209,10 +210,14 @@ def create_video_node(
 def submit_generation(
     project: ProjectArg,
     node: Annotated[str, Field(description="要提交的视频节点（节点名或 ID）")],
+    allow_unrecognized_refs: Annotated[
+        bool,
+        Field(description="提示词里有画布认不出的素材编号时会拒绝提交。只有用户确认那些地方本来就不是引用素材时才填 true；平时不填"),
+    ] = False,
 ) -> dict[str, Any]:
     """提交生成任务（会花积分），调用后直接提交，不再弹确认。只在用户明确要求生成这个节点时调用，不要自己主动提交。
-    同一节点已有任务在跑时会拒绝。提交后只返回任务 ID，不会自动盯进度。"""
-    return _safe(lambda: service.submit_generation(project, node))
+    同一节点已有任务在跑时会拒绝；提示词里有画布认不出的素材编号（漏括号等）时也会拒绝，并给出位置。提交后只返回任务 ID，不会自动盯进度。"""
+    return _safe(lambda: service.submit_generation(project, node, allow_unrecognized_refs))
 
 
 @mcp.tool(annotations=WRITE)

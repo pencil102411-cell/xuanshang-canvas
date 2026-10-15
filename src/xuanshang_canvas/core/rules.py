@@ -20,8 +20,16 @@ LABEL_KIND = {"图片": "image", "视频": "video", "音频": "audio"}
 _AT_REF = re.compile(r"@\s*(图片|视频|音频)\s*(\d+)")
 _PAREN_REF = re.compile(r"[（(〔【]\s*@?\s*(图片|视频|音频)\s*(\d+)\s*[）)〕】]")
 _CANONICAL_REF = re.compile(r"\((图片|视频|音频)(\d+)\)")
-# 这些写法画布不认，不会当成素材引用，只提醒，不自动改。
-_ODD_REF = re.compile(r"[<《\[]\s*(图片|视频|音频)\s*(\d+)\s*[>》\]]")
+# 正文里所有「图片/视频/音频 + 数字」，用来找出没有写成 (图片N) 的裸编号。
+_LABEL_NUMBER = re.compile(r"(图片|视频|音频)\s*(\d+)")
+# 省略写法：(图片7)、8 / (图片7)和8 —— 后面那个 8 画布不会当成引用。
+_ELIDED_AFTER_REF = re.compile(r"\((图片|视频|音频)(\d+)\)\s*[、,，和与及/]\s*(\d+)")
+# 范围写法：(图片1)—8 / (图片1)—(图片8) / 图片1—8 —— 画布不会认出中间的编号。
+_RANGE = re.compile(r"(?:\((图片|视频|音频)(\d+)\)|(图片|视频|音频)\s*(\d+))\s*[—–\-~～]+\s*\(?\s*(?:图片|视频|音频)?\s*(\d+)\)?")
+# 没括号的省略写法：图片7、8 / 图片7和8。
+_BARE_ELIDED = re.compile(r"(?<![(（])(图片|视频|音频)\s*(\d+)\s*[、,，和与及/]\s*(\d+)")
+# 数字后面跟着这些字，多半是时长、数量，不是素材编号（例如「参考视频27秒」）。
+_UNIT_AFTER = re.compile(r"\s*(秒|s(?![a-z])|帧|分钟|小时|%|％|张(?!开)|个|段|条|次|岁|米|倍|fps)", re.I)
 
 
 @dataclass
@@ -29,12 +37,14 @@ class PromptCheck:
     prompt: str
     converted: list[str] = field(default_factory=list)
     references: dict[str, list[int]] = field(default_factory=dict)
-    problems: list[str] = field(default_factory=list)
+    reference_count: int = 0  # 全文合法引用出现的总次数
+    format_problems: list[str] = field(default_factory=list)  # 画布认不出的写法（裸编号、省略、范围）
+    problems: list[str] = field(default_factory=list)  # 编号越界、接入的素材没被引用
     warnings: list[str] = field(default_factory=list)
 
 
 def normalize_prompt(prompt: str) -> tuple[str, list[str]]:
-    """规则 2。返回（转换后的提示词，转换记录）。"""
+    """规则 2。返回（转换后的提示词，转换记录）。只转换已经带括号或 @ 的写法，裸编号不自动改。"""
     converted: list[str] = []
 
     def _replace(match: re.Match[str]) -> str:
@@ -49,6 +59,80 @@ def normalize_prompt(prompt: str) -> tuple[str, list[str]]:
     return text, converted
 
 
+def _locate(text: str, start: int, end: int) -> str:
+    """给出「第几行：…前后文…」，方便定位。"""
+    line = text.count("\n", 0, start) + 1
+    left = text.rfind("\n", 0, start) + 1
+    right = text.find("\n", end)
+    right = len(text) if right == -1 else right
+    before = text[max(left, start - 12):start]
+    after = text[end:min(right, end + 12)]
+    return f"第 {line} 行「{'…' if start - 12 > left else ''}{before}【{text[start:end]}】{after}{'…' if end + 12 < right else ''}」"
+
+
+def find_format_problems(text: str) -> list[str]:
+    """找出画布认不出的素材编号写法。text 应该是 normalize_prompt 之后的提示词。"""
+    problems: list[str] = []
+    canonical = [m.span() for m in _CANONICAL_REF.finditer(text)]
+    flagged: list[tuple[int, int]] = []
+
+    def inside_canonical(start: int, end: int) -> bool:
+        return any(s <= start and end <= e for s, e in canonical)
+
+    def overlaps_flagged(start: int, end: int) -> bool:
+        return any(start < e and s < end for s, e in flagged)
+
+    for m in _RANGE.finditer(text):
+        label = m.group(1) or m.group(3)
+        first = int(m.group(2) or m.group(4))
+        last = int(m.group(5))
+        if last <= first:
+            continue  # 「图片3-1」之类不是范围，交给裸编号检查
+        flagged.append(m.span())
+        problems.append(
+            f"{_locate(text, *m.span())}：范围写法画布不会认出中间的编号。"
+            f"请把要引用的每一个都写出来，如 ({label}{first})、({label}{first + 1})……；不需要逐个引用时改用不带编号的描述"
+        )
+
+    for m in _ELIDED_AFTER_REF.finditer(text):
+        if overlaps_flagged(*m.span()):
+            continue
+        flagged.append(m.span())
+        label, number = m.group(1), int(m.group(3))
+        problems.append(
+            f"{_locate(text, *m.span())}：后面的「{number}」不会被当成素材引用，请写成 ({label}{int(m.group(2))})、({label}{number})"
+        )
+
+    for m in _BARE_ELIDED.finditer(text):
+        if overlaps_flagged(*m.span()):
+            continue
+        flagged.append(m.span())
+        label, first, second = m.group(1), int(m.group(2)), int(m.group(3))
+        problems.append(
+            f"{_locate(text, *m.span())}：没有括号，而且省略了第二个编号，画布都不会当成素材引用。"
+            f"请写成 ({label}{first})、({label}{second})"
+        )
+
+    for m in _LABEL_NUMBER.finditer(text):
+        if inside_canonical(*m.span()) or overlaps_flagged(*m.span()):
+            continue
+        label, number = m.group(1), int(m.group(2))
+        if _UNIT_AFTER.match(text, m.end()):
+            hint = (
+                f"这里的数字看起来不是素材编号（像时长或数量），但「{label}{number}」连写容易被误读。"
+                f"如果是引用素材，写成 ({label}{number})；如果不是，换个说法，例如「参考视频时长为{number}秒」"
+            )
+        else:
+            hint = f"没有括号，画布不会把它当成素材引用。要引用素材请写成 ({label}{number})"
+        problems.append(f"{_locate(text, *m.span())}：{hint}")
+    return problems
+
+
+def canvas_view(prompt: str) -> str:
+    """按画布自己的识别规则看提示词：只统一画布认得的括号写法，@图片N 这类画布不认的保持原样。"""
+    return _PAREN_REF.sub(lambda m: f"({m.group(1)}{int(m.group(2))})", prompt or "")
+
+
 def check_prompt(prompt: str, counts: dict[str, int]) -> PromptCheck:
     """规则 2 + 规则 3。counts 是每种素材接入的数量，如 {"image": 3, "video": 1}。"""
     if not isinstance(prompt, str) or not prompt.strip():
@@ -57,16 +141,12 @@ def check_prompt(prompt: str, counts: dict[str, int]) -> PromptCheck:
         return result
     text, converted = normalize_prompt(prompt)
     result = PromptCheck(prompt=text, converted=converted)
-
-    for match in _ODD_REF.finditer(text):
-        result.warnings.append(
-            f"提示词里的「{match.group(0)}」不是画布认的引用写法，画布不会把它当成素材引用；"
-            f"如果是想引用素材，请写成({match.group(1)}{int(match.group(2))})"
-        )
+    result.format_problems = find_format_problems(text)
 
     found: dict[str, set[int]] = {kind: set() for kind in KIND_LABEL}
     for match in _CANONICAL_REF.finditer(text):
         found[LABEL_KIND[match.group(1)]].add(int(match.group(2)))
+        result.reference_count += 1
     result.references = {kind: sorted(numbers) for kind, numbers in found.items() if numbers}
 
     for kind, label in KIND_LABEL.items():

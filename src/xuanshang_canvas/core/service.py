@@ -17,7 +17,7 @@ from .config import Settings, data_dir, load_settings
 from .discovery import CanvasInstance, find_instances, instance_for_port
 from .errors import CanvasApiError, CanvasConnectionError, CanvasError, RuleViolation
 from .media import IMAGE_EXTENSIONS, MAX_IMAGE_SIDE, RESIZED_LONG_SIDE, VIDEO_EXTENSIONS, local_image_info, transfer_name, verify_upload
-from .rules import KIND_LABEL, build_video_params, check_prompt, compare_fields, dedupe_name, describe_params
+from .rules import KIND_LABEL, build_video_params, canvas_view, check_prompt, compare_fields, dedupe_name, describe_params, find_format_problems
 
 PROVIDER = "xuanshang"
 REMOTE_PROJECT = "default"  # 玄上之音那边的 ProjectName，画布固定用 default
@@ -436,7 +436,7 @@ class CanvasService:
             "项目名": saved.get("name"),
             "项目ID": project_id,
             "项目文件夹": saved.get("cacheDir"),
-            "读回核对": "一致" if not problems else problems,
+            "保存核对": "一致" if not problems else problems,
             "下一步": "要上传认证素材的话，先用 create_certified_group 在这个项目里建认证分组。",
         }
 
@@ -479,7 +479,7 @@ class CanvasService:
             "分组名": key,
             "分组ID": group_id,
             "项目": {"名称": proj.get("name"), "ID": proj["id"]},
-            "读回核对": "一致" if not problems else problems,
+            "保存核对": "一致" if not problems else problems,
             "注意": "玄上那边没有删除分组的接口，分组建了就删不掉，以后起名前先想好。",
             "下一步": "可以用 upload_certified_image / upload_certified_video 往这个分组上传素材。",
         }
@@ -777,7 +777,7 @@ class CanvasService:
                 for n in new_nodes
             ],
             **({"跳过（画布上已有）": skipped} if skipped else {}),
-            "读回核对": "一致" if not mismatches else mismatches,
+            "保存核对": "一致" if not mismatches else mismatches,
         }
 
     def _add_items(self, project_id: str, nodes: list[dict[str, Any]], edges: list[dict[str, Any]]) -> None:
@@ -847,6 +847,12 @@ class CanvasService:
             problems.append("同一个节点接了不止一次：" + "、".join(g.label_of(by_id[i]) for i in duplicated))
         counts = {"image": len(image_nodes), "video": len(video_nodes), "audio": 0}
         check = check_prompt(prompt, counts)
+        if check.format_problems:
+            problems.append(
+                f"提示词里有 {len(check.format_problems)} 处素材编号画布认不出来（全文每一处引用都要写成 (图片N)、(视频N)，"
+                "不能只在开头声明区加括号、正文省略）：\n  · " + "\n  · ".join(check.format_problems[:30])
+                + ("\n  · ……" if len(check.format_problems) > 30 else "")
+            )
         problems.extend(check.problems)
         if problems:
             raise RuleViolation("没有创建视频节点，因为：\n- " + "\n- ".join(problems))
@@ -891,7 +897,9 @@ class CanvasService:
             "节点名": final_name,
             "参数": describe_params(final_params),
             "素材编号": [f"{m['编号']} = {m['节点名']}" for m in mapping],
-            "读回核对": "一致（提示词、素材顺序、参数都和请求一样）" if not mismatches else mismatches,
+            # 两项核对分开报：保存一致 ≠ 每一处引用都能被画布认出来。
+            "保存核对": "一致（画布里保存的提示词、素材顺序、参数都和请求一样）" if not mismatches else mismatches,
+            "引用格式检查": f"通过：全文 {check.reference_count} 处素材引用都是画布能识别的 (图片N)/(视频N) 写法，没有漏括号、省略或范围写法",
         }
         if final_name != (name or "玄上-Seedance").strip():
             result["改名说明"] = f"已有同名节点，自动改名为「{final_name}」，旧节点保留不动"
@@ -899,7 +907,7 @@ class CanvasService:
             result["引用格式已转换"] = check.converted
         if check.warnings:
             result["注意"] = check.warnings
-        result["下一步"] = "要生成的话用 submit_generation（会花积分，需要使用者确认）。"
+        result["下一步"] = "用户明确要生成时，用 submit_generation 提交（会花积分）。"
         return result
 
     def _source_problem(
@@ -934,7 +942,7 @@ class CanvasService:
     # ------------------------------------------------------------------ 提交生成 / 转成片（花积分）
     # 不再弹确认：用户自己检查过提示词和画布才会下达生成指令。规则里要求 AI 只在用户明确要求时调用。
 
-    def submit_generation(self, project: str, node: str) -> dict[str, Any]:
+    def submit_generation(self, project: str, node: str, allow_unrecognized_refs: bool = False) -> dict[str, Any]:
         proj = self.resolve_project(project)
         graph = self._graph(proj["id"])
         tasks = self._tasks(proj["id"])
@@ -952,13 +960,18 @@ class CanvasService:
         inputs = self._ordered_inputs(target, graph, tasks)
         counts = {kind: sum(1 for i in inputs if i["类型"] == kind) for kind in g.KINDS}
         check = check_prompt(data.get("prompt", ""), counts)
-        warnings = list(check.problems) + list(check.warnings)
-        at_refs = [item for item in check.converted if item.startswith("@")]
-        if at_refs:
-            warnings.append(
-                "提示词里有 @ 写法的引用（" + "、".join(at_refs[:5]) + "），画布不会把它当成素材引用。"
-                "以后可以用 create_video_node 新建节点（插件会自动改成 (图片N) 写法）"
+        # 按画布的识别规则查原提示词（@图片N 画布不认，也算问题），有画布认不出的写法就先不提交，免得白花积分。
+        unrecognized = find_format_problems(canvas_view(data.get("prompt", "")))
+        if unrecognized and not allow_unrecognized_refs:
+            raise RuleViolation(
+                f"没有提交：「{g.label_of(target)}」的提示词里有 {len(unrecognized)} 处素材编号画布认不出来，提交后这些地方不会关联到素材：\n  · "
+                + "\n  · ".join(unrecognized[:30]) + ("\n  · ……" if len(unrecognized) > 30 else "")
+                + "\n建议用 create_video_node 按原素材和参数新建一个修正版节点再提交。"
+                "如果用户确认这些地方本来就不是引用素材（比如只是普通文字），可以带上 allow_unrecognized_refs=true 照原样提交。"
             )
+        warnings = list(check.problems) + list(check.warnings)
+        if unrecognized:
+            warnings.append(f"用户确认按原样提交；提示词里有 {len(unrecognized)} 处素材编号画布认不出来")
         task = self.connect().post(f"/api/projects/{proj['id']}/tasks", {"nodeId": target["id"]})
         result: dict[str, Any] = {
             "任务ID": task.get("id"),
