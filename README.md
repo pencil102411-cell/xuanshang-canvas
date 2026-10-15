@@ -204,7 +204,8 @@ xuanshang-canvas/
 
 - 改规则只改 `rules/RULES.md`，然后运行 `python scripts/build_adapters.py` 重新生成各家的规则文件；`--check` 只检查是否一致。MCP 服务的使用说明直接读 `RULES.md`。
 - 所有 AI 工具都通过 `scripts/start-mcp.ps1` 启动插件。它自己去 uv 的常见安装位置找 uv，再运行 `uv run --frozen --quiet --project <插件目录> xuanshang-canvas-mcp`。不直接写 `uv`，是因为 Windows 上刚装好 uv 时，已经开着的程序（包括 Claude 应用）看不到新的 PATH，会报 Connection closed。
-- 为什么 Claude Code 插件放在仓库根目录而不是 `adapters/claude-code/`：启动脚本要从插件自己的文件夹运行，插件目录里必须有 Python 源码。依赖装在 `${CLAUDE_PLUGIN_DATA}/venv`，插件更新时保留。
+- 为什么 Claude Code 插件放在仓库根目录而不是 `adapters/claude-code/`：启动脚本要从插件自己的文件夹运行，插件目录里必须有 Python 源码。
+- 依赖目录按版本分开：Claude Code 给的基础位置是 `${CLAUDE_PLUGIN_DATA}/venv`，启动脚本实际用 `venv-<版本号>`。升级时旧版本的会话可能还开着、占用着旧目录里的文件（Windows 会报「另一个程序正在使用此文件」），分开后互不影响。旧版本目录在没人使用时由启动脚本自动删除（先改名试探，改名失败说明还在用，就跳过）。服务用 `python -m` 启动，而不是 venv 里的 exe，同样是为了不锁住需要更新的文件。
 - 为什么用 `uv run --frozen --project` 而不是 `uvx --from`：在开着 Windows Defender 的电脑上实测，uvx 在临时目录里装依赖时会被 Defender 锁住 pywin32 的文件而失败（`os error 32`）；装到固定目录（`uv run`、`uv tool install`）没有这个问题。`--frozen` 按 `uv.lock` 装，所有间接依赖的版本也是固定的。
 - `start-mcp.ps1` 要保存成带 BOM 的 UTF-8，否则 Windows PowerShell 5.1 读中文会乱码。
 - 依赖升级：改 `pyproject.toml` 后运行 `uv lock`，测完再发布。
