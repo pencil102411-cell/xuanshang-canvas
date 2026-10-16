@@ -21,29 +21,40 @@ if (-not $candidates) {
 # 原因：升级插件时，旧版本的会话可能还开着、占用着旧依赖目录里的文件，新版本如果用同一个目录就更新不了。
 $base = $env:UV_PROJECT_ENVIRONMENT
 if ($base) {
+    # Claude Code 传进来的是正斜杠路径，统一成 Windows 的完整写法，后面比较路径才不会出错。
+    $base = [IO.Path]::GetFullPath($base).TrimEnd('\')
     $version = 'dev'
     $match = Select-String -LiteralPath (Join-Path $root 'pyproject.toml') -Pattern '^version\s*=\s*"([^"]+)"' -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($match) { $version = $match.Matches[0].Groups[1].Value }
     $current = "$base-$version"
     $env:UV_PROJECT_ENVIRONMENT = $current
 
-    # 清理旧版本的依赖目录：先改名试探，改名成功说明没有程序在用，再删除；正在用的跳过，下次再清。
+    # 清理旧版本的依赖目录。只删「没有任何正在运行的程序来自这个目录」的，正在用的绝不碰，下次再清。
     $parent = Split-Path -Parent $base
     $leaf = Split-Path -Leaf $base
-    if (Test-Path -LiteralPath $parent) {
-        Get-ChildItem -LiteralPath $parent -Directory -ErrorAction SilentlyContinue |
-            Where-Object { ($_.Name -eq $leaf -or $_.Name -like "$leaf-*") -and $_.FullName -ne $current } |
-            ForEach-Object {
-                $trash = "$($_.FullName).delete-$PID"
-                try {
-                    Rename-Item -LiteralPath $_.FullName -NewName (Split-Path -Leaf $trash) -ErrorAction Stop
-                    Remove-Item -LiteralPath $trash -Recurse -Force -ErrorAction SilentlyContinue
-                } catch { }
+    $old = @(Get-ChildItem -LiteralPath $parent -Directory -ErrorAction SilentlyContinue | Where-Object {
+        ($_.Name -eq $leaf -or $_.Name -like "$leaf-*") -and -not $_.FullName.Equals($current, [StringComparison]::OrdinalIgnoreCase)
+    })
+    if ($old.Count -gt 0) {
+        $running = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | ForEach-Object { $_.ExecutablePath } | Where-Object { $_ })
+        foreach ($dir in $old) {
+            # 0.3.1–0.4.1 的清理会先把目录改名（xxx.delete-数字），改名前启动的程序记的还是原名，所以原名也要查。
+            $names = @($dir.FullName, ($dir.FullName -replace '(\.delete-\d+)+$', ''))
+            $inUse = $false
+            foreach ($name in $names) {
+                $prefix = $name.TrimEnd('\') + '\'
+                if ($running | Where-Object { $_.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) }) { $inUse = $true }
             }
+            if (-not $inUse) {
+                Remove-Item -LiteralPath $dir.FullName -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
     }
 }
 
-# 用 python -m 启动（而不是 venv 里的 xuanshang-canvas-mcp.exe），运行中的会话不会锁住需要更新的程序文件。
+# --no-editable：把插件代码复制进依赖目录。不用「记路径」的方式，因为路径里有中文时，
+# 中文版 Windows 上的 Python 会把记下的路径读成乱码，导致找不到插件代码。
+# 用 python -m 启动（而不是依赖目录里的 exe），运行中的会话不会锁住需要更新的程序文件。
 # 直接调用（不经过管道），uv 会继承本进程的输入输出，MCP 协议数据原样传递。
-& $candidates[0] run --frozen --quiet --project $root python -m xuanshang_canvas.mcp_server.server @args
+& $candidates[0] run --frozen --quiet --no-editable --project $root python -m xuanshang_canvas.mcp_server.server @args
 exit $LASTEXITCODE
