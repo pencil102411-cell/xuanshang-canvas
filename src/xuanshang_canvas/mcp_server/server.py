@@ -132,14 +132,11 @@ def upload_certified_image(
     file_path: Annotated[str, Field(description="本地图片的完整路径，如 C:\\素材\\司徒陌-面部.png")],
     group: Annotated[str, Field(description="认证分组名或分组 ID（用 list_certified_groups 查）")],
     display_name: Annotated[str | None, Field(description="放到画布上时显示的名字，不填就用原文件名")] = None,
-    allow_resize: Annotated[
-        bool, Field(description="图片长边超过 6000px 时画布会压缩它。只有用户明确同意压缩后才填 true；平时不填")
-    ] = False,
 ) -> dict[str, Any]:
     """本地图片按原质量上传并认证（JPG/PNG/WEBP/BMP/GIF）。返回素材 ID、存储去向、上传核对结果、认证状态。
-    长边超过 6000px 的图会被画布压缩：第一次调用会拒绝并说明，要先问用户，同意后带 allow_resize=true 再调。
+    长边超过 6000px 的图照样上传，画布会自动缩到长边 5800px（JPEG），结果的「自动缩小」里会写原图和缩小后的尺寸，要转告用户。
     上传后要再用 add_certified_asset_node 放到画布上。"""
-    return _safe(lambda: service.upload(project, file_path, group, display_name, "image", allow_resize))
+    return _safe(lambda: service.upload(project, file_path, group, display_name, "image"))
 
 
 @mcp.tool(annotations=WRITE)

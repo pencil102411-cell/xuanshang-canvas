@@ -16,7 +16,7 @@ from .client import CanvasClient, probe_canvas
 from .config import Settings, data_dir, load_settings
 from .discovery import CanvasInstance, find_instances, instance_for_port
 from .errors import CanvasApiError, CanvasConnectionError, CanvasError, RuleViolation
-from .media import IMAGE_EXTENSIONS, MAX_IMAGE_SIDE, RESIZED_LONG_SIDE, VIDEO_EXTENSIONS, local_image_info, transfer_name, verify_upload
+from .media import IMAGE_EXTENSIONS, MAX_IMAGE_SIDE, VIDEO_EXTENSIONS, local_image_info, transfer_name, verify_upload
 from .rules import KIND_LABEL, build_video_params, canvas_view, check_prompt, compare_fields, dedupe_name, describe_params, find_format_problems
 
 PROVIDER = "xuanshang"
@@ -593,7 +593,6 @@ class CanvasService:
         group: str,
         display_name: str | None,
         kind: str,
-        allow_resize: bool = False,
     ) -> dict[str, Any]:
         proj = self.resolve_project(project)
         path = Path(str(file_path or "").strip().strip('"')).expanduser()
@@ -612,14 +611,8 @@ class CanvasService:
             info = local_image_info(path)
             if info is None:
                 raise RuleViolation(f"读不出这张图片的尺寸，可能文件损坏或不是真正的 {ext} 图片：{path}")
+            # 规则 4：超过 6000px 照样上传，画布会自动缩到长边 5800px（JPEG），结果里写清楚缩到了多大。
             needs_resize = max(info[1], info[2]) > MAX_IMAGE_SIDE
-            # 规则 4：超过 6000px 会被画布压缩，必须先告诉用户、用户同意后才传。
-            if needs_resize and not allow_resize:
-                raise RuleViolation(
-                    f"没有上传：图片「{path.name}」是 {info[1]}×{info[2]}，长边超过 {MAX_IMAGE_SIDE}px，"
-                    f"上传时画布会把长边缩到 {RESIZED_LONG_SIDE}px 并转成 JPEG，画质会有损失。"
-                    "请先告诉用户；用户同意压缩后，带上 allow_resize=true 再调用一次。也可以让用户自己先把图缩小。"
-                )
         return self._upload(proj, path, group_obj, display, kind, needs_resize)
 
     def _upload(self, proj: dict[str, Any], path: Path, group: dict[str, Any], display: str, kind: str, resized: bool) -> dict[str, Any]:
@@ -666,7 +659,12 @@ class CanvasService:
                     f"文件已经传上去了（素材 ID {asset_id}），但核对不通过：{check.message}。"
                     "已停止，没有等认证，也不建议使用这个素材。"
                 )
-            if check.status in ("warn", "unknown"):
+            if resized and check.local_dims and check.remote_dims:
+                result["自动缩小"] = (
+                    f"原图 {check.local_dims[0]}×{check.local_dims[1]}，长边超过 {MAX_IMAGE_SIDE}px，"
+                    f"画布上传时自动缩到了 {check.remote_dims[0]}×{check.remote_dims[1]}（JPEG）"
+                )
+            elif check.status in ("warn", "unknown"):
                 warnings.append(f"上传核对：{check.message}")
         else:
             warnings.append("画布没有返回文件地址，没能核对远端文件")

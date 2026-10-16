@@ -181,11 +181,11 @@ def verify_upload(
     check = RemoteCheck("ok", "", local_size, remote_size, local_dims, remote_dims)
     if expect_resized:
         if remote_dims and max(remote_dims) <= RESIZED_LONG_SIDE:
-            check.status, check.message = "warn", f"按事先确认的那样被画布压缩过：长边缩到 {max(remote_dims)}px"
+            check.status, check.message = "warn", f"原图长边超过 {MAX_IMAGE_SIDE}px，画布自动缩小了：长边缩到 {max(remote_dims)}px"
         elif remote_dims:
             check.status, check.message = "fail", f"预期被压缩到长边 {RESIZED_LONG_SIDE}px，远端却是 {remote_dims[0]}×{remote_dims[1]}"
         else:
-            check.status, check.message = "unknown", "图片已按确认压缩上传，但没能读到远端尺寸"
+            check.status, check.message = "unknown", f"原图长边超过 {MAX_IMAGE_SIDE}px，画布会自动缩小，但没能读到远端尺寸"
         return check
     # 尺寸不一致：图一定被改过，直接报错。
     if kind == "image" and local_dims and remote_dims and remote_dims != local_dims:
